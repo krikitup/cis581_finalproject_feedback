@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Team Feedback Form</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 600px; margin: 40px auto; }
+    label { font-weight: bold; display: block; margin-top: 10px; }
+    textarea, select, input { width: 100%; margin-top: 5px; padding: 8px; }
+    button { margin-top: 15px; padding: 10px 20px; }
+  </style>
+</head>
+<body>
+  <h2>Team Feedback Form</h2>
+
+  <label for="team">Select Team:</label>
+  <select id="team"></select>
+
+  <label for="group">Select Group:</label>
+  <select id="group">
+    <option value="A">A</option>
+    <option value="B">B</option>
+    <option value="C">C</option>
+    <option value="D">D</option>
+    <option value="E">E</option>
+    <option value="F">F</option>
+  </select>
+
+  <label>What went well?</label>
+  <textarea id="q1"></textarea>
+
+  <label>What could improve?</label>
+  <textarea id="q2"></textarea>
+
+  <label>Any additional comments?</label>
+  <textarea id="q3"></textarea>
+
+  <button onclick="submitForm()">Submit Feedback</button>
+
+  <p id="status"></p>
+
+  <script>
+    const SHEET_URL = "YOUR_GOOGLE_APPS_SCRIPT_URL";
+    const CSV_PATH = "Final Project groups - Sheet1.csv";
+
+    // Load team names from CSV
+    fetch(CSV_PATH)
+      .then(r => r.text())
+      .then(t => {
+        const rows = t.split("\n").map(r => r.trim()).filter(r => r);
+        const select = document.getElementById("team");
+        rows.slice(1).forEach(row => {
+          const cols = row.split(",");
+          const opt = document.createElement("option");
+          opt.value = cols[0];
+          opt.text = cols[0];
+          select.appendChild(opt);
+        });
+      });
+
+    function submitForm() {
+      const data = {
+        team: document.getElementById("team").value,
+        group: document.getElementById("group").value,
+        q1: document.getElementById("q1").value,
+        q2: document.getElementById("q2").value,
+        q3: document.getElementById("q3").value
+      };
+
+      fetch(SHEET_URL, {
+        method: "POST",
+        body: JSON.stringify(data),
+        headers: { "Content-Type": "application/json" }
+      })
+      .then(res => res.json())
+      .then(r => {
+        document.getElementById("status").innerText = "✅ Feedback submitted anonymously!";
+      })
+      .catch(() => {
+        document.getElementById("status").innerText = "❌ Submission failed.";
+      });
+    }
+  </script>
+</body>
+</html>
