@@ -16,11 +16,17 @@
 <body>
   <h2>CIS581 Final Project Feedback</h2>
 
-  <label for="team">Select Team:</label>
-  <select id="team"></select>
+  <!-- GROUP SELECTION -->
+  <label for="group">Select Group:</label>
+  <select id="group">
+    <option value="">-- Select Group --</option>
+  </select>
 
-  <label for="group">Group:</label>
-  <input id="group" type="text" readonly />
+  <!-- TEAM SELECTION -->
+  <label for="team">Select Team:</label>
+  <select id="team" disabled>
+    <option value="">-- Select a group first --</option>
+  </select>
 
   <label for="q1">What went well?</label>
   <textarea id="q1" rows="3"></textarea>
@@ -35,51 +41,82 @@
   <div id="status"></div>
 
   <script>
-    const CSV_PATH = "teams.csv";  // your uploaded file
-    const SHEET_URL = "https://script.google.com/macros/s/AKfycbwLUgC8XroiMGe3cpzr8JSaA9xtBjNRmkmJnZdtx7fhqrGXGaQ8TbIZQjWO-cakDTyH/exec";  // paste after deployment
+    const CSV_PATH = "teams.csv";  // CSV with S. No., Team Name, Student A/B/C, Groups
+    const SHEET_URL = "https://script.google.com/macros/s/AKfycbwLUgC8XroiMGe3cpzr8JSaA9xtBjNRmkmJnZdtx7fhqrGXGaQ8TbIZQjWO-cakDTyH/exec";  // paste your /exec URL here
 
-    // --- Utility: Strip emails in parentheses ---
+    let allTeams = [];
+
     function stripEmail(name) {
       return name.replace(/\s*\([^)]*\)/g, "").trim();
     }
 
-    // --- Load teams ---
+    // Load all teams from CSV
     fetch(CSV_PATH)
       .then(r => r.text())
       .then(t => {
-        const lines = t.split("\n").slice(1); // skip header
-        const select = document.getElementById("team");
+        const lines = t.split("\n").slice(1);
+        const groups = new Set();
+        allTeams = [];
+
         lines.forEach(line => {
           if (!line.trim()) return;
           const cols = line.split(",");
-          const team = cols[1]?.trim();
+          const teamName = cols[1]?.trim();
           const students = [cols[2], cols[3], cols[4]]
             .map(x => (x ? stripEmail(x) : ""))
             .filter(x => x && x.toLowerCase() !== "n/a")
             .join(", ");
           const group = cols[8]?.trim();
+          if (teamName && group) {
+            groups.add(group);
+            allTeams.push({ team: teamName, group, students });
+          }
+        });
+
+        // Populate group dropdown
+        const groupSelect = document.getElementById("group");
+        Array.from(groups).sort().forEach(g => {
           const opt = document.createElement("option");
-          opt.value = JSON.stringify({ team, group });
-          opt.text = `${team} – (${students})`;
-          select.appendChild(opt);
+          opt.value = g;
+          opt.text = g;
+          groupSelect.appendChild(opt);
         });
-        select.addEventListener("change", e => {
-          const data = JSON.parse(e.target.value);
-          document.getElementById("group").value = data.group || "";
+
+        // When group changes → filter teams
+        groupSelect.addEventListener("change", e => {
+          const selectedGroup = e.target.value;
+          const teamSelect = document.getElementById("team");
+          teamSelect.innerHTML = "";
+          if (!selectedGroup) {
+            teamSelect.disabled = true;
+            teamSelect.innerHTML = '<option value="">-- Select a group first --</option>';
+            return;
+          }
+          const filtered = allTeams.filter(t => t.group === selectedGroup);
+          filtered.forEach(t => {
+            const opt = document.createElement("option");
+            opt.value = JSON.stringify({ team: t.team, group: t.group });
+            opt.text = `${t.team} – (${t.students})`;
+            teamSelect.appendChild(opt);
+          });
+          teamSelect.disabled = false;
         });
-        // trigger default
-        select.dispatchEvent(new Event("change"));
       });
 
-    // --- Submit feedback ---
+    // Submit feedback
     function submitFeedback() {
-      const selected = JSON.parse(document.getElementById("team").value);
+      const teamSelect = document.getElementById("team");
+      const selected = teamSelect.value ? JSON.parse(teamSelect.value) : null;
+      if (!selected) {
+        document.getElementById("status").innerText = "⚠️ Please select a team.";
+        return;
+      }
       const data = {
         team: selected.team,
         group: selected.group,
         q1: document.getElementById("q1").value,
         q2: document.getElementById("q2").value,
-        q3: document.getElementById("q3").value,
+        q3: document.getElementById("q3").value
       };
       fetch(SHEET_URL, {
         method: "POST",
@@ -90,13 +127,4 @@
       .then(() => {
         document.getElementById("status").innerText = "✅ Feedback submitted anonymously!";
         document.getElementById("q1").value = "";
-        document.getElementById("q2").value = "";
-        document.getElementById("q3").value = "";
-      })
-      .catch(() => {
-        document.getElementById("status").innerText = "❌ Submission failed. Try again.";
-      });
-    }
-  </script>
-</body>
-</html>
+        document.getElementById("
