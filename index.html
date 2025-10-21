@@ -3,82 +3,98 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Team Feedback Form</title>
+  <title>CIS581 Final Project Feedback</title>
   <style>
-    body { font-family: Arial, sans-serif; max-width: 600px; margin: 40px auto; }
-    label { font-weight: bold; display: block; margin-top: 10px; }
-    textarea, select, input { width: 100%; margin-top: 5px; padding: 8px; }
-    button { margin-top: 15px; padding: 10px 20px; }
+    body { font-family: Arial, sans-serif; margin: 40px auto; max-width: 700px; }
+    h2 { text-align: center; }
+    label { font-weight: bold; display: block; margin-top: 15px; }
+    textarea, select { width: 100%; padding: 8px; margin-top: 5px; }
+    button { margin-top: 20px; padding: 10px 20px; cursor: pointer; }
+    #status { margin-top: 15px; font-weight: bold; }
   </style>
 </head>
 <body>
-  <h2>Team Feedback Form</h2>
+  <h2>CIS581 Final Project Feedback</h2>
 
   <label for="team">Select Team:</label>
   <select id="team"></select>
 
-  <label for="group">Select Group:</label>
-  <select id="group">
-    <option value="A">A</option>
-    <option value="B">B</option>
-    <option value="C">C</option>
-    <option value="D">D</option>
-    <option value="E">E</option>
-    <option value="F">F</option>
-  </select>
+  <label for="group">Group:</label>
+  <input id="group" type="text" readonly />
 
-  <label>What went well?</label>
-  <textarea id="q1"></textarea>
+  <label for="q1">What went well?</label>
+  <textarea id="q1" rows="3"></textarea>
 
-  <label>What could improve?</label>
-  <textarea id="q2"></textarea>
+  <label for="q2">What could be improved?</label>
+  <textarea id="q2" rows="3"></textarea>
 
-  <label>Any additional comments?</label>
-  <textarea id="q3"></textarea>
+  <label for="q3">Any additional comments?</label>
+  <textarea id="q3" rows="3"></textarea>
 
-  <button onclick="submitForm()">Submit Feedback</button>
-
-  <p id="status"></p>
+  <button onclick="submitFeedback()">Submit Feedback</button>
+  <div id="status"></div>
 
   <script>
-    const SHEET_URL = "YOUR_GOOGLE_APPS_SCRIPT_URL";
-    const CSV_PATH = "data.csv";
+    const CSV_PATH = "teams.csv";  // your uploaded file
+    const SHEET_URL = "YOUR_GOOGLE_APPS_SCRIPT_URL";  // paste after deployment
 
-    // Load team names from CSV
+    // --- Utility: Strip emails in parentheses ---
+    function stripEmail(name) {
+      return name.replace(/\s*\([^)]*\)/g, "").trim();
+    }
+
+    // --- Load teams ---
     fetch(CSV_PATH)
       .then(r => r.text())
       .then(t => {
-        const rows = t.split("\n").map(r => r.trim()).filter(r => r);
+        const lines = t.split("\n").slice(1); // skip header
         const select = document.getElementById("team");
-        rows.slice(1).forEach(row => {
-          const cols = row.split(",");
+        lines.forEach(line => {
+          if (!line.trim()) return;
+          const cols = line.split(",");
+          const team = cols[1]?.trim();
+          const students = [cols[2], cols[3], cols[4]]
+            .map(x => (x ? stripEmail(x) : ""))
+            .filter(x => x && x.toLowerCase() !== "n/a")
+            .join(", ");
+          const group = cols[8]?.trim();
           const opt = document.createElement("option");
-          opt.value = cols[0];
-          opt.text = cols[0];
+          opt.value = JSON.stringify({ team, group });
+          opt.text = `${team} – (${students})`;
           select.appendChild(opt);
         });
+        select.addEventListener("change", e => {
+          const data = JSON.parse(e.target.value);
+          document.getElementById("group").value = data.group || "";
+        });
+        // trigger default
+        select.dispatchEvent(new Event("change"));
       });
 
-    function submitForm() {
+    // --- Submit feedback ---
+    function submitFeedback() {
+      const selected = JSON.parse(document.getElementById("team").value);
       const data = {
-        team: document.getElementById("team").value,
-        group: document.getElementById("group").value,
+        team: selected.team,
+        group: selected.group,
         q1: document.getElementById("q1").value,
         q2: document.getElementById("q2").value,
-        q3: document.getElementById("q3").value
+        q3: document.getElementById("q3").value,
       };
-
       fetch(SHEET_URL, {
         method: "POST",
         body: JSON.stringify(data),
         headers: { "Content-Type": "application/json" }
       })
       .then(res => res.json())
-      .then(r => {
+      .then(() => {
         document.getElementById("status").innerText = "✅ Feedback submitted anonymously!";
+        document.getElementById("q1").value = "";
+        document.getElementById("q2").value = "";
+        document.getElementById("q3").value = "";
       })
       .catch(() => {
-        document.getElementById("status").innerText = "❌ Submission failed.";
+        document.getElementById("status").innerText = "❌ Submission failed. Try again.";
       });
     }
   </script>
