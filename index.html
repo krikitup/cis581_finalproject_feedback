@@ -2,129 +2,196 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>CIS581 Final Project Feedback</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 40px auto; max-width: 700px; }
+    body { font-family: Arial, sans-serif; margin: 40px auto; max-width: 720px; }
     h2 { text-align: center; }
-    label { font-weight: bold; display: block; margin-top: 15px; }
-    textarea, select { width: 100%; padding: 8px; margin-top: 5px; }
-    button { margin-top: 20px; padding: 10px 20px; cursor: pointer; }
-    #status { margin-top: 15px; font-weight: bold; }
+    label { font-weight: 600; display:block; margin-top:16px; }
+    select, textarea, button { width:100%; padding:10px; margin-top:6px; }
+    button { cursor:pointer; }
+    #status { margin-top:12px; font-weight:600; }
   </style>
+  <!-- Robust CSV parsing (handles quotes/commas/newlines) -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
 <body>
   <h2>CIS581 Final Project Feedback</h2>
 
-  <!-- GROUP SELECTION -->
+  <!-- 1) Group first -->
   <label for="group">Select Group:</label>
   <select id="group">
     <option value="">-- Select Group --</option>
   </select>
 
-  <!-- TEAM SELECTION -->
+  <!-- 2) Team (filtered by group) -->
   <label for="team">Select Team:</label>
   <select id="team" disabled>
     <option value="">-- Select a group first --</option>
   </select>
 
+  <!-- Feedback fields -->
   <label for="q1">What went well?</label>
-  <textarea id="q1" rows="3"></textarea>
+  <textarea id="q1" rows="3" placeholder="Be specific…"></textarea>
 
   <label for="q2">What could be improved?</label>
-  <textarea id="q2" rows="3"></textarea>
+  <textarea id="q2" rows="3" placeholder="Constructive, actionable…"></textarea>
 
   <label for="q3">Any additional comments?</label>
-  <textarea id="q3" rows="3"></textarea>
+  <textarea id="q3" rows="3" placeholder="Optional…"></textarea>
 
-  <button onclick="submitFeedback()">Submit Feedback</button>
+  <button id="submitBtn">Submit Feedback</button>
   <div id="status"></div>
 
   <script>
-    const CSV_PATH = "teams.csv";  // CSV with S. No., Team Name, Student A/B/C, Groups
-    const SHEET_URL = "https://script.google.com/macros/s/AKfycbwLUgC8XroiMGe3cpzr8JSaA9xtBjNRmkmJnZdtx7fhqrGXGaQ8TbIZQjWO-cakDTyH/exec";  // paste your /exec URL here
+    const CSV_PATH = "teams.csv"; // Keep at repo root
+    const SHEET_URL = "YOUR_GOOGLE_APPS_SCRIPT_URL"; // <-- paste your /exec URL
 
-    let allTeams = [];
+    let allRows = []; // full CSV rows
+    let grouped = new Map(); // group -> rows[]
 
-    function stripEmail(name) {
-      return name.replace(/\s*\([^)]*\)/g, "").trim();
+    // --- Helpers ---
+    const stripEmail = (s) => (s || "").replace(/\s*\([^)]*\)/g, "").trim();
+    const isPresent = (s) => !!(s && s.trim() && s.trim().toLowerCase() !== "n/a");
+
+    // Title-case names lightly (won't be perfect for every surname, but nicer)
+    function titleCase(s) {
+      return (s || "")
+        .toLowerCase()
+        .split(/\s+/)
+        .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(" ");
     }
 
-    // Load all teams from CSV
-    fetch(CSV_PATH)
-      .then(r => r.text())
-      .then(t => {
-        const lines = t.split("\n").slice(1);
-        const groups = new Set();
-        allTeams = [];
+    function displayName(raw) {
+      const noEmail = stripEmail(raw);
+      return titleCase(noEmail);
+    }
 
-        lines.forEach(line => {
-          if (!line.trim()) return;
-          const cols = line.split(",");
-          const teamName = cols[1]?.trim();
-          const students = [cols[2], cols[3], cols[4]]
-            .map(x => (x ? stripEmail(x) : ""))
-            .filter(x => x && x.toLowerCase() !== "n/a")
-            .join(", ");
-          const group = cols[8]?.trim();
-          if (teamName && group) {
-            groups.add(group);
-            allTeams.push({ team: teamName, group, students });
+    function buildTeamLabel(row) {
+      const names = [row["Student_A"], row["Student_B"], row["Student_C"]]
+        .filter(isPresent)
+        .map(displayName);
+
+      return `${row["Team_Name"]} – (${names.join(", ")})`;
+    }
+
+    // --- Load and index CSV by group ---
+    function loadCSV() {
+      Papa.parse(CSV_PATH, {
+        download: true,
+        header: true,
+        skipEmptyLines: true,
+        complete: (res) => {
+          // Some exports leave a trailing empty column because of trailing comma after 'Groups,'.
+          // We’ll ignore unknown columns and just use the known headers.
+          allRows = (res.data || []).filter(r => isPresent(r["Team_Name"]));
+
+          grouped.clear();
+          const groupSet = new Set();
+          for (const r of allRows) {
+            const g = (r["Groups"] || "").trim();
+            if (!g) continue; // skip rows without group
+            groupSet.add(g);
+            if (!grouped.has(g)) grouped.set(g, []);
+            grouped.get(g).push(r);
           }
-        });
 
-        // Populate group dropdown
-        const groupSelect = document.getElementById("group");
-        Array.from(groups).sort().forEach(g => {
-          const opt = document.createElement("option");
-          opt.value = g;
-          opt.text = g;
-          groupSelect.appendChild(opt);
-        });
-
-        // When group changes → filter teams
-        groupSelect.addEventListener("change", e => {
-          const selectedGroup = e.target.value;
-          const teamSelect = document.getElementById("team");
-          teamSelect.innerHTML = "";
-          if (!selectedGroup) {
-            teamSelect.disabled = true;
-            teamSelect.innerHTML = '<option value="">-- Select a group first --</option>';
-            return;
-          }
-          const filtered = allTeams.filter(t => t.group === selectedGroup);
-          filtered.forEach(t => {
+          // Populate group dropdown sorted A..F
+          const groupSelect = document.getElementById("group");
+          groupSelect.innerHTML = '<option value="">-- Select Group --</option>';
+          [...groupSet].sort().forEach(g => {
             const opt = document.createElement("option");
-            opt.value = JSON.stringify({ team: t.team, group: t.group });
-            opt.text = `${t.team} – (${t.students})`;
-            teamSelect.appendChild(opt);
+            opt.value = g;
+            opt.textContent = g;
+            groupSelect.appendChild(opt);
           });
-          teamSelect.disabled = false;
-        });
-      });
 
-    // Submit feedback
-    function submitFeedback() {
+          // Wire change handler
+          groupSelect.addEventListener("change", onGroupChange);
+        },
+        error: () => {
+          document.getElementById("status").innerText = "❌ Failed to load teams.csv";
+        }
+      });
+    }
+
+    function onGroupChange(e) {
+      const g = e.target.value;
       const teamSelect = document.getElementById("team");
-      const selected = teamSelect.value ? JSON.parse(teamSelect.value) : null;
-      if (!selected) {
-        document.getElementById("status").innerText = "⚠️ Please select a team.";
+      teamSelect.innerHTML = "";
+      if (!g) {
+        teamSelect.disabled = true;
+        teamSelect.innerHTML = '<option value="">-- Select a group first --</option>';
         return;
       }
-      const data = {
+      const rows = (grouped.get(g) || []).sort((a, b) =>
+        (a["Team_Name"] || "").localeCompare(b["Team_Name"] || "", undefined, {sensitivity: "base"})
+      );
+      rows.forEach(r => {
+        const opt = document.createElement("option");
+        // Store minimal payload needed on submit
+        opt.value = JSON.stringify({ team: r["Team_Name"], group: r["Groups"] });
+        opt.textContent = buildTeamLabel(r);
+        teamSelect.appendChild(opt);
+      });
+      teamSelect.disabled = false;
+    }
+
+    // --- Submit feedback to Apps Script ---
+    async function submitFeedback() {
+      const status = document.getElementById("status");
+      const teamSel = document.getElementById("team");
+      const groupSel = document.getElementById("group");
+      if (!groupSel.value) {
+        status.innerText = "⚠️ Please select a group.";
+        return;
+      }
+      if (!teamSel.value) {
+        status.innerText = "⚠️ Please select a team.";
+        return;
+      }
+
+      let selected;
+      try { selected = JSON.parse(teamSel.value); } catch { selected = null; }
+      if (!selected) {
+        status.innerText = "⚠️ Invalid team selection. Reload the page.";
+        return;
+      }
+
+      const payload = {
         team: selected.team,
         group: selected.group,
-        q1: document.getElementById("q1").value,
-        q2: document.getElementById("q2").value,
-        q3: document.getElementById("q3").value
+        q1: document.getElementById("q1").value.trim(),
+        q2: document.getElementById("q2").value.trim(),
+        q3: document.getElementById("q3").value.trim(),
       };
-      fetch(SHEET_URL, {
-        method: "POST",
-        body: JSON.stringify(data),
-        headers: { "Content-Type": "application/json" }
-      })
-      .then(res => res.json())
-      .then(() => {
-        document.getElementById("status").innerText = "✅ Feedback submitted anonymously!";
-        document.getElementById("q1").value = "";
-        document.getElementById("
+
+      try {
+        const res = await fetch(SHEET_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const out = await res.json().catch(() => ({}));
+        if (res.ok && out.status === "ok") {
+          status.innerText = "✅ Feedback submitted anonymously!";
+          document.getElementById("q1").value = "";
+          document.getElementById("q2").value = "";
+          document.getElementById("q3").value = "";
+          document.getElementById("team").selectedIndex = 0;
+          document.getElementById("group").selectedIndex = 0;
+          document.getElementById("team").disabled = true;
+        } else {
+          status.innerText = "❌ Submission failed. Check Apps Script deployment.";
+        }
+      } catch (err) {
+        status.innerText = "❌ Network error submitting feedback.";
+      }
+    }
+
+    document.getElementById("submitBtn").addEventListener("click", submitFeedback);
+    loadCSV();
+  </script>
+</body>
+</html>
